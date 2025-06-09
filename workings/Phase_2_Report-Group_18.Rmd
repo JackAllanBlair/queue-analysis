@@ -1,0 +1,456 @@
+---
+title: "A study on the effect of Alanine Aminotransferase measurements (ALT) and genreal lifestyle factors on Liver Damage and its prediction."
+author: "Mei Huang (300504502), Naruebet Thanuwohan( 300397282), Jack Blair (300507331)"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
+library(ggplot2)
+library(patchwork)
+library(tidyr)
+library(ggpubr)
+library(moments)
+library(dplyr)
+library(knitr)
+```
+
+# Executive Summary  
+  
+**Goal:** predict liver damage, find most important data for predicting liver damage   
+**Method:** Using a K Nearest Neighbor *classification model*, GridSearch for *finding model settings*, and SelectKBest for *feature selection*  
+**Findings:** we can predict, to a high degree of accuracy (~97%), using features related to alanine aminotransferase measurements, alcohol consumption, diet, gender, and smoking data, liver damage, and to some extent, liver disease.  
+  
+# Background and Data Description
+**Sources**: National Center for Health Statistics  
+We have combined data from the following data sets: 
+
+* BIOPRO (Biochemistry Profile) - This ALT variable is in this dataset.
+* ALQ (Alcohol Use)
+* DBQ (Diet Behavior)
+* DEMO (Demographic Data)
+* SMQ (Smoking - Cigarette Use)
+* PAQ (Physical Activity)
+
+We included data from the years 2011 to 2020.
+
+**Note**: Many features of all the data sets have been excluded due to high amounts of missing data. It is key to note that many variables were removed so that the data sets could merge smoothly, essentially making sure we have the same variables for each yearly data set.
+
+**Questions**:
+“Can we, to a degree of accuracy, predict liver damage using data on Alanine Aminotransferase measurements (ALT) as well as several other lifestyle factors such as alcohol use or physical activity?”
+
+**Method**: We use ALT to label liver damage  
+
+```{r echo=FALSE}
+df <- data.frame(row.names = c("Male  -  IU/L", "Female - IU/L"))
+df$"Age >= 21" <- "48"
+df$"Age 18-20" <- "37"
+df$"Age >= 21"[2] <- "31"
+df$"Age 18-20"[2] <- "30"
+kable(df)
+```
+
+
+Classification from reference 1.
+
+We have created a new binary variable “LiverDamage” with this classification, with the value 1 meaning that a person has liver disease, and the value 0 meaning that a person does not have liver disease.
+
+
+```{r echo=FALSE}
+df<-read.csv("LiverDamage_NHANES.csv")
+kable(t(head(df)))
+```
+**Description**:
+
+```{r, echo=FALSE}
+desc <- data.frame(row.names = c("SEQN",
+                               "LBXSATSI",
+                               "Gender", "Age",
+                               "CountryOB",
+                               "DietHealth",
+                               "MilkConumption",
+                               "TakeoutMeals",
+                               "ReadyMeals",
+                               "FrozenMeals",
+                               "Cigs100",
+                               "AvgAlc12Month",
+                               "DrinkEveryday",
+                               "VigWork",
+                               "ModWork",
+                               "TravelBikeWalk",
+                               "VigRec",
+                               "ModRec",
+                               "MinSedentary",
+                               "YEARS",
+                               "Liverdamage"   ))
+
+desc$"Description"[1]<- "Sequential Number (ID)"
+desc$"Description"[2]<- "Alanine Aminotransferase (ALT) (U/L)"
+desc$"Description"[3]<- "Gender of patient"
+desc$"Description"[4]<- "Age of patient"
+desc$"Description"[5]<- "Country of birth.(1:Born in 50 US states or Washington, DC,2:Others,77:Refused,Don’t Know)"
+desc$"Description"[6]<-"How healthy is the diet(1:Excellent,2:Very Good,3:Good,4:Fair,5:Poor,7:Refused, 9:Don’t know)"
+desc$"Description"[7]<-"Past 30 day milk product consumption(0:Never,1:Rarely,2:Sometimes,3:Often,4:Varied,7:Refused,9:Don’t Know)"
+desc$"Description"[8]<-"Meals from fast food or pizza place"
+desc$"Description"[9]<-"Ready-to-eat foods in past 30 days"
+desc$"Description"[10]<-"Frozen meals/pizza in past 30 days"
+desc$"Description"[11]<-"Smoked at least 100 cigarettes in life (1/Yes, 2:No, 7:Refused, 9:Don’t know)"
+desc$"Description"[12]<-"Days have 4/5 drinks - past 12 monthes"
+desc$"Description"[13]<-"Ever have 4/5 or more drinks every day"
+desc$"Description"[14]<-"Vigorous work activity(1/Yes, 2:No, 7:Refused, 9:Don’t know)"
+desc$"Description"[15]<-"Moderate work activity(1/Yes, 2:No, 7:Refused, 9:Don’t know)"
+desc$"Description"[16]<-"Walk or bicycle(1/Yes, 2:No, 7:Refused, 9:Don’t know)"
+desc$"Description"[17]<-"Vigorous recreational activities((1/Yes, 2:No, 7:Refused, 9:Don’t know)"
+desc$"Description"[18]<-"Moderate recreational activities((1/Yes, 2:No, 7:Refused, 9:Don’t know)"
+desc$"Description"[19]<-"Minutes sedentary activity"
+desc$"Description"[20]<-"Dataset years used"
+desc$"Description"[21]<-"Our target Variables(1:Yes, 0:No)"
+
+kable(desc)
+```
+
+```{r, echo=FALSE}
+#change numeric variables to categorical 
+df$Gender <- as.factor(df$Gender) 
+df$CountryOB <- as.factor(df$CountryOB)
+df$Cigs100 <- as.factor(df$Cigs100)
+df$DietHealth <- as.factor(df$DietHealth)
+df$MilkConumption <- as.factor(df$MilkConumption)
+df$DrinkEveryday <- as.factor(df$DrinkEveryday)
+df$VigWork <- as.factor(df$VigWork)
+df$ModWork <- as.factor(df$ModWork)
+df$TravelBikeWalk <- as.factor(df$TravelBikeWalk)
+df$VigRec <- as.factor(df$VigRec)
+df$ModRec <- as.factor(df$ModRec)
+df$YEARS <- as.factor(df$YEARS)
+df$LiverDamage <- as.factor(df$LiverDamage)
+```
+
+
+```{r echo = FALSE}
+df<-read.csv("LiverDamage_NHANES.csv")
+smp_size <- floor(0.70 * nrow(df))
+
+## set the seed to make your partition reproducible
+set.seed(123)
+train_ind <- sample(seq_len(nrow(df)), size = smp_size)
+
+train <- df[train_ind, ]
+test <- df[-train_ind, ]
+
+str(train)
+table(train$LiverDamage)
+```
+The combined data set we generated has 8006 rows with 21 variables, we have 13 categorical variables, and 8 numeric variables. There is no missing data, since we have deleted all the missing data in the process of combining data so as to allow us to merge the data properly. We have split the data with a 70/30 training/test split which has resulted in our training data set having a total of 5604 rows, with 540 of those patients diagnosed as having liver damage.
+
+  
+# Ethics, Privacy and Security
+
+**Ethics** 
+
+The National Health and Nutrition Examination Survey (NHANES) has ensured that Personally Identifiable Information (PII) has been removed from the data sets, with the main concern regarding privacy being the possibility of de-anonymization. The possibility of de-anonymization is heightened with the wide breadth of data present on individuals, including behavioral and demographic (National Center for Health Statistics, 2021). Therefore, one of the key ethical considerations was to ensure that any linkage between data sets or analysis could not inadvertently be used for the de-anonymization of an individual. 
+
+Additionally, as we are dealing with health and medical data and information, we have been careful with our analysis and have ensured that the analysis is conducted with a focus on equity, e.g., not averaging across genders, as the medical and health data pertaining to men is not necessarily the same as for women, etc. 
+
+**Privacy** 
+
+We have evaluated the security of our project’s tech stack, data, and information according to the CIA triad framework: confidentiality, integrity, and availability.
+
+**Confidentiality** 
+
+Access to our code base was controlled using GitHub. The remote GitHub repository was kept private, with access controlled by the repository owner to ensure only approved people, who were team members, were to have access. 
+
+All the team members had GitHub accounts which were secured using 2FA authentication and a minimum 8 alphanumeric character length password with one capital, number, and special character. This was to ensure that access to team members’ accounts, and thereby the team repository, remained secure. 
+
+Additionally, all team members were accessing the local and remote repositories using approved devices to ensure clean devices with up-to-date security policies and the latest firmware updates. These devices were used strictly for work purposes (e.g., this analysis). Each team member device was secured using BitLocker encryption and password-controlled account access. 
+
+Team communication was conducted via email and Discord. Access to the team channel is invite-only and approval is controlled by a team administrator. The Discord of each team member was set up with 2FA. 
+
+**Integrity** 
+
+We have imported our data directly from the NHANES website, the data is then saved as .rds files, to take a “snapshot” of the data at that period of time. This is important for the reproducibility of our analysis and results, if the NHANES data hosted on the CDC website were to be changed in any way or become compromised. 
+
+In addition, our use of git version control also provides logs to ensure non-repudiation (i.e., the inability to deny). The tracking of every version of our scripts ensures that any changes to the data are kept and maintained. 
+
+**Availability**
+
+
+Our project work was conducted using git version control to ensure traceable and restorable changes to our code base. Additionally, all the local git repositories are backed up in real-time with Microsoft’s OneDrive cloud service technology. Our remote repositories are stored in the cloud with GitHub. This ensures that if there was hardware corruption, that the files would still be recoverable using our Cloud service.
+  
+  
+# Exploratory Data Analysis
+
+```{r, echo=FALSE}
+#get numeric column name list
+nums <- colnames(train)[unlist(lapply(train, is.numeric), use.names = FALSE)]
+
+cat<-colnames(train)[!colnames(train) %in% nums]
+
+```
+        
+```{r, echo=FALSE}
+MySummary <- function(x){
+  return(c(
+    "minimum" = min(x),
+    "first quartile" =quantile(x, .25),
+    "median" =median(x),
+    "third quartile" =quantile(x, .75),
+    "maximum" = max(x),
+    "IRQ" = IQR(x),
+    "sd" = sd(x),
+    "skewness" =skewness(x), 
+    "kurtosis" = kurtosis(x))
+  )
+}
+```
+
+```{r echo=FALSE}
+summary<-round(apply(train[nums], MySummary, MARGIN=2),0)
+kable(t(summary))
+```
+
+This data set only contains Age above 20, so it is only suitable to predict Age between 20-80.
+
+```{r echo=FALSE}
+#Correlation Matrix
+df_num<-train[nums]
+#round(cor(df_num), 3) used to find connections
+#p1<-ggplot(train, aes(x=LiverDamage, y=LBXSATSI)) + geom_histogram(bins=10,color="darkblue", fill="lightblue")
+#p2<-ggplot(train, aes(x=ModRec, y=ModWork)) + geom_histogram(bins=10,color="darkblue", fill="lightblue")
+#p1+p2+plot_layout(ncol = 2)
+
+correls <- data.frame(row.names = c("LBXSATSI", "ModWork"))
+correls$"LiverDamage" <- 0.688
+correls$"LiverDamage"[2] <- 0
+correls$"ModRec"[1] <- 0
+correls$"ModRec"[2] <- 1.000
+kable(correls)
+#"LiverDamage", "0.688" "LBXSATSI"
+#ModRec 1.000 ModWork
+```
+There are only two correlations as can be seen from the table above. LiverDamage is based off of LBXSATSI(ALT) and age, so this correlation is to be expected. ModRec and ModWork is slightly surprising but expected in a way, as they are similar but different variables.
+  
+Our data set is quite small and we still have no idea which feature might be useful, so the following visualization plots will be for all the features we have
+
+### Visualization of numeric variables distribution
+
+```{r, echo=FALSE}
+# Basic histogram for numeric features
+p1<-ggplot(train, aes(x=Age)) + geom_histogram(bins=10,color="darkblue", fill="lightblue")+labs(subtitle="Figure 1A")
+p2<-ggplot(train, aes(x=TakeoutMeals)) + geom_histogram(bins=10,color="darkblue", fill="lightblue")+labs(subtitle="Figure 2A")
+p3<-ggplot(train, aes(x=ReadyMeals)) + geom_histogram(bins=10,color="darkblue", fill="lightblue")+labs(subtitle="Figure 3A")
+p4<-ggplot(train, aes(x=FrozenMeals)) + geom_histogram(bins=10,color="darkblue", fill="lightblue")+labs(subtitle="Figure 1B")
+p5<-ggplot(train, aes(x=AvgAlc12Month)) + geom_histogram(bins=10,color="darkblue", fill="lightblue")+labs(subtitle="Figure 2B")
+p6<-ggplot(train, aes(x=MinSedentary)) + geom_histogram(bins=10,color="darkblue", fill="lightblue")+labs(subtitle="Figure 3B")
+p1+p2+p3+p4+p5+p6+plot_layout(ncol = 3)
+```
+
+Figures 1A(Age) and 3B(MInSedentary) are spread across all the data range, while all the other numeric variables are tailed to the right.
+
+
+### Visualization of categorical variables distribution
+
+```{r, echo=FALSE}
+library(repr)
+fig <- function(width, heigth){
+     options(repr.plot.width = width, repr.plot.height = heigth)
+}
+#bar plot for categorical Variables
+p8<-ggplot(df, aes(x=Gender)) +scale_x_continuous(breaks = 1:2)+
+  geom_bar(color="darkblue", fill="lightblue")+labs(subtitle="Figure 1A")
+
+p9<-ggplot(df, aes(x=CountryOB))+scale_x_continuous(breaks = c(1,2,77,99))+
+  geom_bar(color="darkblue", fill="lightblue")+labs(subtitle="Figure 2A")
+
+p10<-ggplot(df, aes(x=DietHealth)) + geom_bar(color="darkblue", fill="lightblue")+
+  scale_x_continuous(breaks = c(1,2,3,4,5,7,9))+labs(subtitle="Figure 3A")
+
+p11<-ggplot(df, aes(x=Cigs100)) + geom_bar(color="darkblue", fill="lightblue")+
+  scale_x_continuous(breaks = c(1,2,7,9))+labs(subtitle="Figure 1B")
+
+p12<-ggplot(df, aes(x=DrinkEveryday)) + geom_bar(color="darkblue", fill="lightblue")+
+  scale_x_continuous(breaks = c(1,2,7,9))+labs(subtitle="Figure 2B")
+
+p13<-ggplot(df, aes(x=VigWork)) + geom_bar(color="darkblue", fill="lightblue")+
+  scale_x_continuous(breaks = c(1,2,7,9))+labs(subtitle="Figure 3B")
+
+p14<-ggplot(df, aes(x=TravelBikeWalk)) + geom_bar(color="darkblue", fill="lightblue")+
+  scale_x_continuous(breaks = c(1,2,7,9))+labs(subtitle="Figure 1C")
+
+p15<-ggplot(df, aes(x=VigRec)) + geom_bar(color="darkblue", fill="lightblue")+
+  scale_x_continuous(breaks = c(1,2,7,9))+labs(subtitle="Figure 2C")
+
+p16<-ggplot(df, aes(x=VigWork)) + geom_bar(color="darkblue", fill="lightblue")+
+  scale_x_continuous(breaks = c(1,2,7,9))+labs(subtitle="Figure 3C")
+        
+p17<-ggplot(df, aes(x=ModWork)) + geom_bar(color="darkblue", fill="lightblue")+
+  scale_x_continuous(breaks = c(1,2,7,9))+labs(subtitle="Figure 1D")
+
+p21<-ggplot(df, aes(x=ModRec)) +scale_x_continuous(breaks = c(1,2,9))+
+  geom_bar(color="darkblue", fill="lightblue")+labs(subtitle="Figure 2D")
+
+p18<-ggplot(df, aes(x=YEARS)) + 
+  geom_bar(color="darkblue", fill="lightblue")+labs(subtitle="Figure 3D")
+
+p19<-ggplot(df, aes(x=MilkConumption), fig(1,2)) +scale_x_continuous(breaks = c(0,1,2,3,4,7,9))+
+  geom_bar(color="darkblue", fill="lightblue")+labs(subtitle="Figure 1E")
+  
+p20<-ggplot(df, aes(x=LiverDamage)) + 
+  geom_bar(color="darkblue", fill="lightblue")+scale_x_continuous(breaks = c(0:1))+labs(subtitle="Figure 2E")
+
+p8+p9+p10+p11+p12+p13+plot_layout(ncol = 3)
+p14+p15+p16+p17+p21+p18+plot_layout(ncol = 3)
+p19+p20+plot_layout(ncol = 3)
+
+
+```
+
+We can see from Figure 1A, we have slightly more males than females. From figure 3A we can see that most people have "Good" health (group 3). From figure 3D we can see that most of the data is evenly spread over the years, except the |17_20" group, which is actually around 4 years’ worth of data, instead of the standard two-year periods we see.
+
+
+### Then we have a look at if there is any different distribution for different categorical variables.
+1 = Male, 2 = Female  
+We can see that there is about the same percentage of each gender that have/do not have liver damage.  
+```{r echo=FALSE}
+kable(df %>% count(Gender, LiverDamage) %>% group_by(Gender) %>% mutate(percentage = round(n/sum(n)*100,2)))
+```
+
+1 = United states, 2 = Other  
+```{r echo=FALSE} 
+kable(df %>% count(CountryOB, LiverDamage) %>% group_by(CountryOB) %>% mutate(percentage = round(n/sum(n)*100,2)))
+```
+
+How healthy is the diet(1:Excellent,2:Very Good,3:Good,4:Fair,5:Poor,7:Refused, 9:Don’t know)  
+With this, we can see that as diet health gets worse, the percentage of people who have liver damage increases.  
+i.e., Excellent = 6.7%, Very good = 7.48%, Good = 9.67%, Fair = 12.78%, Poor = 14.14%  
+```{r echo=FALSE}
+kable(df %>% count(DietHealth, LiverDamage) %>% group_by(DietHealth) %>% mutate(percentage = round(n/sum(n)*100,2)))
+```
+
+Past 30 day milk product consumption(0:Never,1:Rarely,2:Sometimes,3:Often,4:Varied,7:Refused,9:Don’t Know)
+We can see from the table that those who often drink milk or drink no milk at all are less likely to have liver damage.
+```{r echo=FALSE}
+kable(df %>% count(MilkConumption, LiverDamage) %>% group_by(MilkConumption) %>% mutate(percentage = round(n/sum(n)*100,2)))
+```
+
+Smoked at least 100 cigarettes in life (1/Yes, 2:No, 7:Refused, 9:Don’t know)
+By not so much, the group that has smoked at least 100 cigarettes have a higher percentage with liver damage (10.25% vs 9.91%)
+```{r echo=FALSE}
+kable(df %>% count(Cigs100, LiverDamage) %>% group_by(Cigs100) %>% mutate(percentage = round(n/sum(n)*100,2)))
+```
+
+Ever have 4/5 or more drinks every day
+The group that had 4/5 drinks per day has 12.5% with liver damage whereas the group that did not have 4/5 drinks per day had 9.67% with liver damage.
+```{r echo=FALSE}
+kable(df %>% count(DrinkEveryday, LiverDamage) %>% group_by(DrinkEveryday) %>% mutate(percentage = round(n/sum(n)*100,2)))
+```
+
+Vigorous work activity(1/Yes, 2:No, 7:Refused, 9:Don’t know)
+The group that did vigorous work had 11.25% with liver damage, whereas the group that did not do vigorous work had 9.62% with liver damage.
+```{r echo=FALSE}
+kable(df %>% count(VigWork, LiverDamage) %>% group_by(VigWork) %>% mutate(percentage = round(n/sum(n)*100,2)))
+```
+
+Walk or bicycle(1/Yes, 2:No, 7:Refused, 9:Don’t know)
+The group that did walk/bike had 10.38% with liver damage, whereas the group that did not walk/bike had 9.94% with liver damage.
+```{r echo=FALSE}
+kable(df %>% count(TravelBikeWalk, LiverDamage) %>% group_by(TravelBikeWalk) %>% mutate(percentage = round(n/sum(n)*100,2)))
+```
+
+Vigorous recreational activities((1/Yes, 2:No, 7:Refused, 9:Don’t know)
+The group that did vigorous recreational activities had 9.01% with liver damage, whereas the group that did not do recreational activities work had 10.53% with liver damage.
+```{r echo=FALSE}
+kable(df %>% count(VigRec, LiverDamage) %>% group_by(VigRec) %>% mutate(percentage = round(n/sum(n)*100,2)))
+```
+
+There seems to be a general increase of people with liver damage over the years until the year period "17_20", which sees a decrease.
+```{r echo=FALSE}
+kable(df %>% count(YEARS, LiverDamage) %>% group_by(YEARS) %>% mutate(percentage = round(n/sum(n)*100,2)))
+```
+
+# Analysis Results
+
+I decided to create a K Nearest Neighbors classification model using a grid search method to find the optimal model. This allows me to find out the significance of variables within the data set as well as providing a method of prediction which are the two objectives of this study.
+
+**Model Creation**  
+Step 1: splitting the data.  
+We have split the data 70/30, meaning we have 70% training data and 30% test data.  
+![visualisation of train/test data](C:/Users/jacko/OneDrive/Desktop/Phase2/train_test_visual.png)  
+  
+Step 2: data transformation/manipulation.    
+  
+![visualisation of train/test data](C:/Users/jacko/OneDrive/Desktop/Phase2/pipeline_explanation.png)  
+Step 3: grid search.  
+
+Using sklearn GridSearchCV, I did a grid search of 1:10 neighbors and the weights "uniform" and "distance". The results can be seen below:
+
+![A heatmap of the KNN GridSearchCV Results.](C:/Users/jacko/OneDrive/Desktop/Phase2/heatmap.png)  
+As we can see from the heat map above, our best model is formed with 6 Neighbors and a classifier weight "distance", which achieves a model accuracy of 94.36%.  
+  
+**Feature Selection**  
+  
+![An explanation of the feature selection pipeline.](C:/Users/jacko/OneDrive/Desktop/Phase2/fs_k_best.png)    
+Using the SelectKBest method we are able to find out which features are statistically significant, the results:  
+   
+
+![Feature selection results.](C:/Users/jacko/OneDrive/Desktop/Phase2/fs_results.png)  
+  
+As we can see from figure 4a, the statistically significant features based on a significance level of 0.05, are: LBXSATSI, AvgAlc12Month, Gender, DietHealth, TakeoutMeals and Cigs100. We will construct a new model using only these features and see if we cannot improve our model.
+  
+**Feature Selected Model**  
+   
+We will be using the same KNN Model / pipeline structure as shown in figure 1a but we will remove all non-significant features from the data set.   
+Old data set shape - unsplit data: (8006, 20), X_train data: (5604, 19)  
+New data set shape: - unsplit data: (8006, 7), X_train data: (5604, 6)  
+  
+We have removed: ['ModWork',
+'TravelBikeWalk',
+'MinSedentary',
+'VigRec',
+'YEARS',
+'MilkConumption',
+'VigWork',
+'FrozenMeals',
+'ModRec',
+'CountryOB',
+'Age',
+'ReadyMeals',
+'DrinkEveryday']  
+
+![A heatmap of the KNN GridSearchCV Results.](C:/Users/jacko/OneDrive/Desktop/Phase2/heatmap_fs.png)  
+  
+  
+Using the same grid search pipeline as shown in figure 2, we yield an overall 97.73% model accuracy, with our best parameters being 4 neighbors and classifier weight "distance", as can be seen on the resulting heat map above.  
+
+
+**Model accuracy: Test set**  
+  
+For our baseline model (all features included) we have a test set accuracy of 94.09%  
+  
+For our feature selected model (limited features included) we have a test set accuracy of 97.59%  
+
+**Notes and possible biases**  
+  
+It should be noted that in the data set there is a total of 4370 males, and 3636 females. This may result in slightly less resilient results when predicting liver damage with female data.  
+  
+  
+
+# Conclusions  
+Our original question is:  
+“Can we, to a degree of accuracy, predict liver damage using data on Alanine Aminotransferase measurements (ALT) as well as several other lifestyle factors such as alcohol use or physical activity?". Through the use of a KNN classification model, using GridSearchCV to find the optimal model settings and SelectKBest to select the best features, we have found the answers to our question. We can, to a high degree of accuracy, predict liver damage using ALT/lifestyle data. The best features included in the final model were LBXSATSI, AvgAlc12Month, Gender, DietHealth, TakeoutMeals and Cigs100. Alcohol consumption, diet, gender, and smoking data can all be used along with ALT measurements to predict liver damage, and to an extent, liver disease.  
+  
+With more testing and refining, this model could be recommended to laboratories testing ALT. With permission, whenever a patient takes an ALT test, the laboratory could use this model, along with the relevant data mentioned above and the ALT test results to predict any major problems with liver damage, and to an extent, liver disease. This could help prevent liver damage/disease and could improve the identifiability of liver damage and or liver disease.  
+    
+# References  
+    
+reference 1:  
+Cave, M., Appana, S., Patel, M., Falkner, K. C., McClain, C. J., & Brock, G. (2010). Polychlorinated Biphenyls, Lead, and Mercury Are Associated with Liver Disease in American Adults: NHANES 2003–2004. Environmental Health Perspectives, 118(12), 1735–1742. https://doi.org/10.1289/ehp.1002720    
+  
+# Individual Contributions  
+  
+* Jack: Combing data set, doing part of EDA Report, data analysis - Refactored all parts of project,
+* Mei: Search and Label data set and doing EDA Report
+* Naru: Code compiling and Ethics, Privacy, Security part.
+
